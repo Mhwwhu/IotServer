@@ -6,11 +6,15 @@ using System.Threading.Tasks;
 
 namespace BackEnd.Listener.Entity
 {
+	public class SleepingDataFrame
+	{
+		public int Id { get; set; }
+		public int DataCount { get; set; }
+		public List<SleepingData> Data { get; set; } = new();
+	}
 	public class SleepingData
 	{
 		public DateTime TimeStamp { get; set; }
-		public int Id { get; set; }
-		public byte Seq { get; set; }
 		public byte Status { get; set; }
 		public byte HeartRate { get; set; }
 		public byte BreatingRate { get; set; }

@@ -17,8 +17,8 @@ using Microsoft.Extensions.Options;
 
 namespace BackEnd.Listener
 {
-	// 规定所有的Message均来自已存在的topic，如果有新的topic产生，则需要通过http请求注册topic
-	public class ListenerAction
+    // 规定所有的Message均来自已存在的topic，如果有新的topic产生，则需要通过http请求注册topic
+    public class ListenerAction
 	{
 		private Context _context;
 		private ILoggerService _logger;
@@ -38,36 +38,55 @@ namespace BackEnd.Listener
 		}
 		public async Task SleepingMonitorAction(MqttApplicationMessage message)
 		{
+			string tag = "SleepingMonitorAction";
 			var payload = message.PayloadSegment.ToArray();
 			var topicName = message.Topic;
 			ulong unixTimeStamp;
-			if(BitConverter.IsLittleEndian)
-			{
-				var timeStampArr = new ArraySegment<byte>(payload, 0, sizeof(long)).ToArray();
-				unixTimeStamp = BitConverter.ToUInt64(timeStampArr, 0);
-			}
-			else
-			{
-				var timeStampArr = new ArraySegment<byte>(payload, 0, sizeof(long)).ToArray();
-				Array.Reverse(timeStampArr);
-				unixTimeStamp = BitConverter.ToUInt64(timeStampArr, 0);
-			}
-			try
-			{
-				DateTimeOffset dateTimeOffset = DateTimeOffset.FromUnixTimeSeconds((long)unixTimeStamp);
-				// 将UTC时间转换为当前时区的时间
-				DateTime localDateTime = dateTimeOffset.ToLocalTime().DateTime;
-				int id = await _dbController.PutMessageAsync(localDateTime, topicName, payload);
+			var confSection = _context.Configuration.GetSection("SleepingData");
+			int countInFrame = int.Parse(confSection["DataCountInFrame"]!);
+			int frameLength = int.Parse(confSection["FrameLength"]!);
+			int timestampOffset = int.Parse(confSection["TimestampOffset"]!);
+			int statusOffset = int.Parse(confSection["StatusOffset"]!);
+			int heartRateOffset = int.Parse(confSection["HeartRateOffset"]!);
+			int breathingRateOffset = int.Parse(confSection["BreathingRateOffset"]!);
 
-				var dataContainer = new SleepingData()
+			var dataContainer = new SleepingDataFrame();
+			try {
+				for (int i = 0; i < countInFrame; i++)
 				{
-					Id = id,
-					TimeStamp = localDateTime,
-					Seq = payload[8],
-					Status = payload[9],
-					HeartRate = payload[10],
-					BreatingRate = payload[11]
-				};
+					int baseOff = i * frameLength;
+					if (BitConverter.IsLittleEndian)
+					{
+						var timeStampArr = new ArraySegment<byte>(payload, baseOff + timestampOffset, sizeof(long)).ToArray();
+						unixTimeStamp = BitConverter.ToUInt64(timeStampArr, 0);
+					}
+					else
+					{
+						var timeStampArr = new ArraySegment<byte>(payload, baseOff + timestampOffset, sizeof(long)).ToArray();
+						Array.Reverse(timeStampArr);
+						unixTimeStamp = BitConverter.ToUInt64(timeStampArr, 0);
+					}
+					DateTimeOffset dateTimeOffset = DateTimeOffset.FromUnixTimeSeconds((long)unixTimeStamp);
+					// 将UTC时间转换为当前时区的时间
+					DateTime localDateTime = dateTimeOffset.ToLocalTime().DateTime;
+					int id = -1;
+					// 将每帧第一个数据的时间戳作为每条记录的时间戳
+					if (i == 0)
+					{
+						id = await _dbController.PutMessageAsync(localDateTime, topicName, payload);
+						dataContainer.Id = id;
+					}
+					var sleepingData = new SleepingData()
+					{
+						TimeStamp = localDateTime,
+						Status = payload[baseOff + statusOffset],
+						HeartRate = payload[baseOff + heartRateOffset],
+						BreatingRate = (byte)(payload[baseOff + breathingRateOffset] / 10)
+					};
+					dataContainer.Data.Add(sleepingData);
+				}
+
+				dataContainer.DataCount = dataContainer.Data.Count;
 				string jsonString = JsonSerializer.Serialize(dataContainer, _jsonSerializerOptions);
 				var forwardTopic = "User/" + string.Join('/', topicName.Split('/').Skip(1));
 				var forwardMessage = new MqttApplicationMessageBuilder()
@@ -77,9 +96,9 @@ namespace BackEnd.Listener
 					.Build();
 				_pubQueue.Enqueue(forwardMessage);
 			}
-			catch (Exception ex)
+			catch (Exception ex) 
 			{
-				Console.WriteLine(ex.Message);
+				_logger.Error(tag, ex.Message);
 			}
 		}
 	}

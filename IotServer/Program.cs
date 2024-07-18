@@ -1,6 +1,5 @@
 
 using BackEnd;
-using BackEnd.DbStore;
 using BackEnd.Listener;
 using BackEnd.DbStore.Entity;
 using System.Text;
@@ -10,6 +9,7 @@ namespace IotServer
 {
     public class Program
 	{
+		private static string _tag = "Program";
 		//	public static void Main(string[] args)
 		//	{
 		//		var builder = WebApplication.CreateBuilder(args);
@@ -54,7 +54,16 @@ namespace IotServer
 			context.BuildServiceProvider(services);
 
 			var mqttListener = context.ServiceProvider.GetRequiredService<MqttListener>();
-			await mqttListener.StartAsync();
+			var logger = context.ServiceProvider.GetRequiredService<ILoggerService>();
+			try
+			{
+				await mqttListener.StartAsync();
+			}
+			catch (Exception ex)
+			{
+				logger.Error(_tag, "Program exited unexpectedly");
+				logger.Error(_tag, ex.Message);
+			}
 			//var dbController = context.ServiceProvider.GetRequiredService<DbController>();
 			//var startTime = new DateTime(2024, 7, 17, 4, 30, 0);
 			//var endTime = new DateTime(2024, 7, 17, 4, 40, 0);

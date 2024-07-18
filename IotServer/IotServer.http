@@ -1,6 +1,6 @@
-@IotServer_HostAddress = http://localhost:5059
+# @IotServer_HostAddress = http://localhost:5059
 
-GET {{IotServer_HostAddress}}/weatherforecast/
-Accept: application/json
+# GET {{IotServer_HostAddress}}/weatherforecast/
+# Accept: application/json
 
-###
+# ###

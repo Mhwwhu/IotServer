@@ -14,7 +14,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BackEnd.Listener
 {
-	public class MqttListener
+    public class MqttListener
 	{
 		private readonly string _tag = "MqttListener";
 		private string _host;
@@ -55,12 +55,19 @@ namespace BackEnd.Listener
 				.Build();
 			client.DisconnectedAsync += async e =>
 			{
-				var connResult = await client.ConnectAsync(options);
-				while (connResult.ResultCode != MqttClientConnectResultCode.Success)
+				MqttClientConnectResult? connResult = null;
+				do
 				{
-					connResult = await client.ConnectAsync(options);
-					_logger.Error(_tag, $"Failed connecting to broker: {_host}:{_port}");
-				} 
+					try
+					{
+						connResult = await client.ConnectAsync(options);
+					}
+					catch (Exception ex)
+					{
+						_logger.Error(_tag, $"Failed reconnecting to broker: {_host}:{_port}");
+						_logger.Error(_tag, ex.Message);
+					}
+				} while (connResult == null || connResult.ResultCode != MqttClientConnectResultCode.Success);
 			};
 			var connResult = await client.ConnectAsync(options);
 			if (connResult.ResultCode != MqttClientConnectResultCode.Success)
@@ -77,14 +84,18 @@ namespace BackEnd.Listener
 			{
 				if (_pubMessages.TryDequeue(out var message))
 				{
-					try
+					bool success = false;
+					while (!success)
 					{
-						await _client.PublishAsync(message);
-					}
-					catch (Exception)
-					{
-						while (connResult.ResultCode != MqttClientConnectResultCode.Success) ;
-						await _client.PublishAsync(message);
+						try
+						{
+							await _client.PublishAsync(message);
+							success = true;
+						}
+						catch (Exception)
+						{
+							_logger.Error(_tag, "Failed publishing, try once more");
+						}
 					}
 				}
 			}
@@ -109,7 +120,15 @@ namespace BackEnd.Listener
 			var matchedActions = _msgHandlerTree.PrefixMatch(e.ApplicationMessage.Topic.Split('/'));
 			foreach(var action in matchedActions)
 			{
-				await action.Value!(e.ApplicationMessage);
+				try
+				{
+					await action.Value!(e.ApplicationMessage);
+				}
+				catch(Exception ex)
+				{
+					_logger.Error(_tag, $"Failed acting on received message");
+					_logger.Error(_tag, ex.Message);
+				}
 			}
 		}
 	}
