@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore.Sqlite;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using BackEnd.DbStore.Relationship;
 using BackEnd.DbStore.Entity;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace BackEnd.DbStore
 {
@@ -20,7 +21,7 @@ namespace BackEnd.DbStore
         public BrokerContext(DbContextOptions<BrokerContext> options) : base(options) { }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.Entity<UserEntity>().ToTable("Users");
+			modelBuilder.Entity<UserEntity>().ToTable("Users");
             modelBuilder.Entity<UserEntity>().Property(u => u.UserName).IsRequired();
             modelBuilder.Entity<UserEntity>().Property(u => u.Password).IsRequired();
             modelBuilder.Entity<UserEntity>().HasKey(u => u.Id);
