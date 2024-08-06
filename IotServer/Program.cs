@@ -48,7 +48,7 @@ namespace IotServer
 			});
 		public static async Task Main(string[] args)
 		{
-			CreateHostBuilder(args).Build().Run();
+			_ = Task.Run(() => CreateHostBuilder(args).Build().Run());
 
 			Context context = new Context();
 			context.Configuration = new ConfigurationBuilder()
@@ -61,25 +61,16 @@ namespace IotServer
 			Context.ConfigureServices(services);
 			context.BuildServiceProvider(services);
 
-			var mqttListener = context.ServiceProvider.GetRequiredService<MqttListener>();
-			var logger = context.ServiceProvider.GetRequiredService<ILoggerService>();
+			var mqttListener = context.ServiceProvider!.GetRequiredService<MqttListener>();
+			var logger = context.ServiceProvider!.GetRequiredService<ILoggerService>();
 			try
 			{
-				//await mqttListener.StartAsync();
+				await mqttListener.StartAsync();
 			}
 			catch (Exception ex)
 			{
 				logger.Error(_tag, "Program exited unexpectedly");
 				logger.Error(_tag, ex.Message);
-			}
-			var dbController = context.ServiceProvider.GetRequiredService<DbController>();
-			var startTime = new DateTime(2024, 7, 17, 4, 30, 0);
-			var endTime = new DateTime(2024, 7, 17, 4, 40, 0);
-			var msgs = await dbController.GetMessagesByTimeAsync("Root/SleepingMonitor/Test", startTime, endTime);
-			foreach (var msg in msgs!)
-			{
-				var s = BitConverter.ToString(msg.Message).Replace('-', ' ');
-				Console.WriteLine(s);
 			}
 		}
 	}

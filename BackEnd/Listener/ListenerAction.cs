@@ -29,46 +29,32 @@ namespace BackEnd.Listener
 		{
 			_context = context;
 			_pubQueue = pubQueue;
-			_logger = context.ServiceProvider.GetRequiredService<ILoggerService>();
-			_dbController = context.ServiceProvider.GetRequiredService<DbController>();
+			_logger = context.ServiceProvider!.GetRequiredService<ILoggerService>();
+			_dbController = context.ServiceProvider!.GetRequiredService<DbController>();
 			_jsonSerializerOptions = new JsonSerializerOptions
 			{
 				WriteIndented = true
 			};
 		}
-		public async Task SleepingMonitorAction(MqttApplicationMessage message)
+		public async Task SleepingMonitorBdataActionAsync(MqttApplicationMessage message)
 		{
-			string tag = "SleepingMonitorAction";
+			string tag = "SleepingMonitorBdataActionAsync";
 			var payload = message.PayloadSegment.ToArray();
 			var topicName = message.Topic;
-			ulong unixTimeStamp;
-			var confSection = _context.Configuration.GetSection("SleepingData");
+			var confSection = _context.Configuration!.GetSection("SleepingBdata");
 			int countInFrame = int.Parse(confSection["DataCountInFrame"]!);
 			int frameLength = int.Parse(confSection["FrameLength"]!);
-			int timestampOffset = int.Parse(confSection["TimestampOffset"]!);
 			int statusOffset = int.Parse(confSection["StatusOffset"]!);
 			int heartRateOffset = int.Parse(confSection["HeartRateOffset"]!);
 			int breathingRateOffset = int.Parse(confSection["BreathingRateOffset"]!);
 
-			var dataContainer = new SleepingDataFrame();
+			var dataContainer = new SleepingBdataFrame();
 			try {
 				for (int i = 0; i < countInFrame; i++)
 				{
 					int baseOff = i * frameLength;
-					if (BitConverter.IsLittleEndian)
-					{
-						var timeStampArr = new ArraySegment<byte>(payload, baseOff + timestampOffset, sizeof(long)).ToArray();
-						unixTimeStamp = BitConverter.ToUInt64(timeStampArr, 0);
-					}
-					else
-					{
-						var timeStampArr = new ArraySegment<byte>(payload, baseOff + timestampOffset, sizeof(long)).ToArray();
-						Array.Reverse(timeStampArr);
-						unixTimeStamp = BitConverter.ToUInt64(timeStampArr, 0);
-					}
-					DateTimeOffset dateTimeOffset = DateTimeOffset.FromUnixTimeSeconds((long)unixTimeStamp);
-					// 将UTC时间转换为当前时区的时间
-					DateTime localDateTime = dateTimeOffset.ToLocalTime().DateTime;
+					
+					DateTime localDateTime = DateTime.Now;
 					int id = -1;
 					// 将每帧第一个数据的时间戳作为每条记录的时间戳
 					if (i == 0)
@@ -76,9 +62,9 @@ namespace BackEnd.Listener
 						id = await _dbController.PutMessageAsync(localDateTime, topicName, payload);
 						dataContainer.Id = id;
 					}
-					var sleepingData = new SleepingData()
+					var sleepingData = new SleepingBdata()
 					{
-						TimeStamp = localDateTime,
+						Timestamp = localDateTime,
 						Status = payload[baseOff + statusOffset],
 						HeartRate = payload[baseOff + heartRateOffset],
 						BreatingRate = (byte)(payload[baseOff + breathingRateOffset] / 10)
@@ -97,6 +83,64 @@ namespace BackEnd.Listener
 				_pubQueue.Enqueue(forwardMessage);
 			}
 			catch (Exception ex) 
+			{
+				_logger.Error(tag, ex.Message);
+			}
+		}
+
+		public async Task SleepingMonitorOdataActionAsync(MqttApplicationMessage message)
+		{
+			string tag = "SleepingMonitorOdataActionAsync";
+			var payload = message.PayloadSegment.ToArray();
+			var topicName = message.Topic;
+			var dataContainer = new SleepingOdataFrame();
+			var confSection = _context.Configuration!.GetSection("SleepingOdata");
+			int countInFrame = int.Parse(confSection["DataCountInFrame"]!);
+			int frameLength = int.Parse(confSection["FrameLength"]!);
+			int piezoelectricSignalOffset = int.Parse(confSection["PiezoelectricSignalOffset"]!);
+			int piezoresistiveSignalOffset = int.Parse(confSection["PiezoresistiveSignalOffset"]!);
+			try
+			{
+				for (int i = 0; i < countInFrame; i++)
+				{
+					int baseOff = i * frameLength;
+
+					DateTime localDateTime = DateTime.Now;
+					int id = -1;
+					// 将每帧第一个数据的时间戳作为每条记录的时间戳
+					if (i == 0)
+					{
+						id = await _dbController.PutMessageAsync(localDateTime, topicName, payload);
+						dataContainer.Id = id;
+					}
+					var originBytes = payload
+						.ToList()
+						.GetRange(baseOff + piezoelectricSignalOffset, 50)
+						.ToArray();
+
+					var piezoelectricSignal = originBytes.Select(i => BitConverter.ToUInt16(originBytes, i * 2)).ToArray();
+					var piezoresistiveSignal = BitConverter.ToUInt16(payload, baseOff + piezoresistiveSignalOffset);
+
+					var sleepingData = new SleepingOdata()
+					{
+						Timestamp = localDateTime,
+						PiezoelectricSignal = piezoelectricSignal,
+						PiezoresistiveSignal = piezoresistiveSignal
+					};
+					dataContainer.Data.Add(sleepingData);
+				}
+
+				dataContainer.DataCount = dataContainer.Data.Count;
+				string jsonString = JsonSerializer.Serialize(dataContainer, _jsonSerializerOptions);
+				var forwardTopic = "User/" + string.Join('/', topicName.Split('/').Skip(1));
+				var forwardMessage = new MqttApplicationMessageBuilder()
+					.WithPayload(jsonString)
+					.WithTopic(forwardTopic)
+					.WithQualityOfServiceLevel(MqttQualityOfServiceLevel.ExactlyOnce)
+					.Build();
+				_pubQueue.Enqueue(forwardMessage);
+			}
+			catch (Exception ex)
 			{
 				_logger.Error(tag, ex.Message);
 			}

@@ -20,7 +20,7 @@ namespace BackEnd.Listener
 		private string _host;
 		private int _port;
 		private string _clientId;
-		private IMqttClient _client;
+		private IMqttClient? _client;
 		private ListenerAction _listenerAction;
 		private ILoggerService _logger;
 		private Context _context;
@@ -40,7 +40,8 @@ namespace BackEnd.Listener
 		}
 		private void ConstructTree()
 		{
-			_msgHandlerTree.Insert(["Root", "SleepingMonitor"], _listenerAction.SleepingMonitorAction);
+			_msgHandlerTree.Insert(["Root", "SleepingMonitor", "Bdata"], _listenerAction.SleepingMonitorBdataActionAsync);
+			_msgHandlerTree.Insert(["Root", "SleepingMonitor", "Odata"], _listenerAction.SleepingMonitorOdataActionAsync);
 		}
 
 		public async Task StartAsync()
@@ -102,17 +103,21 @@ namespace BackEnd.Listener
 		}
 		public void InitTopics()
 		{
-			var dbController = _context.ServiceProvider.GetService<DbController>()!;
-			var topic = "Root/SleepingMonitor/Test";
-			if (dbController.GetTopicAsync(topic).GetAwaiter().GetResult() == null)
+			var dbController = _context.ServiceProvider!.GetService<DbController>()!;
+			var topics = new List<string>();
+			topics.Add("Root/SleepingMonitor/Bdata/Test");
+			topics.Add("Root/SleepingMonitor/Odata/Test");
+			foreach (var topic in topics)
 			{
-				dbController.CreateTopicAsync(topic).GetAwaiter().GetResult();
+				if (dbController.GetTopicAsync(topic).GetAwaiter().GetResult() == null)
+				{
+					dbController.CreateTopicAsync(topic).GetAwaiter().GetResult();
+				}
 			}
-			
 		}
 		public void InitAdmin()
 		{
-			var dbController = _context.ServiceProvider.GetService<DbController>()!;
+			var dbController = _context.ServiceProvider!.GetService<DbController>()!;
 			dbController.RegisterUserAsync("Admin", "000000").GetAwaiter().GetResult();
 		}
 		private async Task OnReceiveMessageAsync(MqttApplicationMessageReceivedEventArgs e)
